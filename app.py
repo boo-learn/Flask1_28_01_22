@@ -8,36 +8,45 @@ BASE_DIR = Path(__file__).parent
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("://", "ql://", 1) \
-                                        or f"sqlite:///{BASE_DIR / 'test.db'}"
+
+db_path = os.environ.get('DATABASE_URL').replace("://", "ql://", 1) if os.environ.get('DATABASE_URL') else None
+app.config['SQLALCHEMY_DATABASE_URI'] = db_path or f"sqlite:///{BASE_DIR / 'test.db'}"
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-class QuoteModel(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    author = db.Column(db.String(32), unique=False)
-    text = db.Column(db.String(255), unique=False)
-    rate = db.Column(db.Integer, server_default='1')
 
-    def __init__(self, author, text, rate=1):
-        self.author = author
-        self.text = text
-        self.rate = rate
+class AuthorModel(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(32), unique=True)
+    quotes = db.relationship('QuoteModel', backref='author', lazy='dynamic')
+
+    def __init__(self, name):
+        self.name = name
 
     def to_dict(self):
         return {
             "id": self.id,
-            "author": self.author,
-            "text": self.text,
-            "rate": self.rate
+            "name": self.name
         }
 
-    def __str__(self):
-        return self.__repr__()
 
-    def __repr__(self):
-        return f"Quote: {self.author} | {self.text[:10]}..."
+class QuoteModel(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    author_id = db.Column(db.Integer, db.ForeignKey(AuthorModel.id))
+    text = db.Column(db.String(255), unique=False)
 
+    def __init__(self, author, text):
+        self.author_id = author.id
+        self.text = text
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "author": {
+                "id": self.author.id,
+                "name": self.author.name
+            }
+        }
 
 @app.route("/quotes/<int:quote_id>")
 def quote_by_id(quote_id):
@@ -86,6 +95,7 @@ def edit_quote(quote_id):
 
     db.session.commit()
     return jsonify(quote.to_dict()), 200
+
 
 @app.route("/quotes/<int:qid>", methods=["DELETE"])
 def delete_quote_by_id(qid):
