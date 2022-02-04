@@ -1,8 +1,8 @@
-from flask import Flask, jsonify, abort, request
-from flask_sqlalchemy import SQLAlchemy
+import os
 from pathlib import Path
 from flask_migrate import Migrate
-import os
+from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, jsonify, abort, request
 
 BASE_DIR = Path(__file__).parent
 
@@ -29,6 +29,14 @@ class AuthorModel(db.Model):
             "name": self.name
         }
 
+    def delete(self):
+        db.session.delete(self)
+        db.session.commit()
+
+    def save(self):
+        db.session.add(self)
+        db.session.commit()
+
 
 class QuoteModel(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -48,6 +56,46 @@ class QuoteModel(db.Model):
             }
         }
 
+    def delete(self):
+        db.session.delete(self)
+        db.session.commit()
+
+    def save(self):
+        db.session.add(self)
+        db.session.commit()
+
+
+# AUTHORS
+@app.route("/authors")
+def authors_list():
+    authors = AuthorModel.query.all()
+    authors = [author.to_dict() for author in authors]
+    return jsonify(authors), 200
+
+
+@app.route("/authors/<int:author_id>")
+def author_by_id(author_id):
+    author = AuthorModel.query.get(author_id)
+    if author in None:
+        abort(404)
+    return jsonify(author), 200
+
+
+# @app.route("/authors/<int:author_id>", methods=["PUT"])
+# def edit_author(author_id):
+#     data = request.json
+#     return jsonify(author), 200
+
+
+@app.route("/authors", methods=["POST"])
+def create_author():
+    author_data = request.json
+    author = AuthorModel(author_data["name"])
+    author.save()
+    return author.to_dict(), 201
+
+
+# QUOTES
 @app.route("/quotes/<int:quote_id>")
 def quote_by_id(quote_id):
     quote = QuoteModel.query.get(quote_id)
@@ -64,13 +112,14 @@ def quotes_list():
     return jsonify(quotes), 200
 
 
-@app.route("/quotes", methods=["POST"])  # <== POST
-def create_quote():
-    data = request.json
-    new_quote = QuoteModel(**data)
-    db.session.add(new_quote)
+@app.route("/authors/<int:author_id>/quotes", methods=["POST"])
+def create_quote(author_id):
+    author = AuthorModel.query.get(author_id)
+    new_quote = request.json
+    q = QuoteModel(author, new_quote["text"])
+    db.session.add(q)
     db.session.commit()
-    return jsonify(new_quote.to_dict()), 201  # 201 - Created
+    return jsonify(q.to_dict()), 201
 
 
 @app.route("/quotes/<int:quote_id>", methods=["PUT"])
@@ -107,14 +156,6 @@ def delete_quote_by_id(qid):
     db.session.commit()
     return jsonify({"message": f"Quote with id {qid} is deleted."}), 200
 
-
-# @app.route("/quotes/filter", methods=["POST"])  # <== POST
-# def filter_quote():
-#     data = request.json
-#     quotes = QuoteModel.query.filter_by(**data)
-#     quotes = [q.to_dict() for q in quotes]
-#
-#     return jsonify(quotes), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
